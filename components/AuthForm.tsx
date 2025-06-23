@@ -13,10 +13,19 @@ import { toast } from "sonner"
 import FormField from "./FormField"
 import { useRouter } from "next/navigation"
 
+import { signIn, signUp } from "@/lib/actions/auth.action"
+import { auth } from "@/firebase/client";
+
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
+
+
 /**
-   * Define the dynamic schema for the form
-   * Based on the type(sign-in or sign-up)
-   */
+* Define the dynamic schema for the form
+* Based on the type(sign-in or sign-up)
+*/
 const authFormSchema = (type: FormType) => {
   return z.object({
     name: type === "sign-up" ? z.string().min(3) : z.string().optional(),
@@ -30,8 +39,8 @@ const AuthForm = ({ type }: { type: FormType }) => {
   const formSchema = authFormSchema(type);
 
   /**
-   * Define a form
-   */
+  * Define a form
+  */
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -42,15 +51,61 @@ const AuthForm = ({ type }: { type: FormType }) => {
   })
 
   /**
-  * On submit collect the data from the user
+  * On submit collect the data from the user and send it to the backend
+  * sign-up and sign-in functionality
   */
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       if (type === 'sign-up') {
+        const { name, email, password } = values;
+
+        /**
+        * Register user with the help of createUserWithEmailAndPassword from firebase/auth
+        */
+        const userCredentials = await createUserWithEmailAndPassword(auth, email, password)
+
+        /**
+        * SignUp user with the help of signUp from /lib/actions/auth.action
+        */
+        const result = await signUp({
+          uid: userCredentials.user.uid,
+          name: name!,
+          email,
+          password
+        })
+
+        if (!result?.succes) {
+          toast.error(result?.message);
+          return;
+        }
+
         toast.success("Account created successfully. Please sign in.")
         router.push("/sign-in")
         console.log('Sign up', values);
       } else {
+        const { email, password } = values;
+
+        /**
+        * SignIn user with the help of signInWithEmailAndPassword from firebase/auth
+        */
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+        /**
+        * getIdToken from the user
+        */
+        const idToken = await userCredential.user.getIdToken();
+        if (!idToken) {
+          toast.error('Sign in failed')
+          return;
+        }
+
+        /**
+        * signIn user with email and idToken with the help of signIn from /lib/actions/auth.action
+        */
+        await signIn({
+          email, idToken
+        })
+
         toast.success("Sign in successfully.")
         router.push("/")
         console.log('Sign up', values);
